@@ -2,14 +2,14 @@ rm(list=ls())
 library(deSolve)
 library(doParallel)
 totalCores <- detectCores()
-cluster <- makeCluster(totalCores[1]) 
+cluster <- makeCluster(totalCores[1]-1) 
 registerDoParallel(cluster)
 library(foreach)
 library(truncnorm)
 library(odin)
 
 design<- seq(0,3,by=0.1)
-num_replicates <- 1
+num_replicates <- 5
 ut_matrix <- matrix(NA, nrow = length(design), ncol = num_replicates)
 S_init <- 490
 I_init <- 10
@@ -18,7 +18,7 @@ dt <- 0.1
 steps <- 30
 
 start<-Sys.time()
-for(replicate_num in 1:num_replicates){
+for(replicate_num in 3:num_replicates){
   
   library(deSolve)
   library(doParallel)
@@ -82,7 +82,9 @@ for(replicate_num in 1:num_replicates){
   
   
   # Return the result
-  return(list(S = S, I = I, R = R))
+  #return(list(S = S, I = I, R = R))
+  return(list(I = I))
+  
 }
 
 
@@ -124,14 +126,16 @@ for(replicate_num in 1:num_replicates){
 
   
   trans <- vector("list", length = length(design))
-  result_matrix <- matrix(NA, nrow = nrow(priorabc), ncol = 3)
+  #result_matrix <- matrix(NA, nrow = nrow(priorabc), ncol = 3)
+  result_matrix <- matrix(NA, nrow = nrow(priorabc), ncol = 1)
   
   for (s in 1: length(design)) {
     for (i in 1:nrow(priorabc)){
       sir_res <- sir_results[[i]][s,]
-      result_matrix[i, 1] <-sir_res[1,1]
-      result_matrix[i, 2] <-sir_res[1,2]
-      result_matrix[i, 3] <-sir_res[1,3]
+      result_matrix[i,1]<- sir_res
+      # result_matrix[i, 1] <-sir_res[1,1]
+      # result_matrix[i, 2] <-sir_res[1,2]
+      # result_matrix[i, 3] <-sir_res[1,3]
     }
     trans[[s]] <- result_matrix
   }
@@ -150,8 +154,11 @@ for(replicate_num in 1:num_replicates){
       library(deSolve)
       library(truncnorm)
       library(abc)
-      check<-abc(trans[[k]][i,1:3],priorabc, trans[[k]][,1:3],
-                 tol=0.5,method="neuralnet", transf=c("logit", "logit"),
+      # check<-abc(trans[[k]][i,1:3],priorabc, trans[[k]][,1:3],
+      #            tol=0.5,method="neuralnet", transf=c("logit", "logit"),
+      #            logit.bounds=rbind(c(0,0.5), c(0,0.5)))
+      check<-abc(trans[[k]][i,1],priorabc, trans[[k]][,1],
+                 tol=0.6,method="neuralnet", transf=c("logit", "logit"),
                  logit.bounds=rbind(c(0,0.5), c(0,0.5)))
       z.abc[[k]][[i]] <- check$adj.values[complete.cases(check$adj.values), ]
       
@@ -179,15 +186,16 @@ for(replicate_num in 1:num_replicates){
 }
 end<-Sys.time()
 timetaken<-end-start
-save(ut_matrix, file="utmatrixstochasticsirparaminf.RDa")
+save(ut_matrix, file="utmatrixstochasticsirparaminf_infectedobservedonly.RDa")
 
 stopCluster(cluster)
 library(ggplot2)
-load("utmatrixstochasticsirparaminf.RDa")
+ut_matrix[ut_matrix < 0] <- 0
+
 mean_row <- rowMeans(ut_matrix, na.rm=TRUE)
 sd_row <- apply(ut_matrix, 1, sd, na.rm=TRUE)
 df <- data.frame(sequence = 1:nrow(ut_matrix), mean = mean_row, sd = sd_row)
-pdf("sirparaminf.pdf", height=4, width=8)
+pdf("sirparaminfinfectedonly.pdf", height=4, width=8)
 ggplot(data=df, aes(x=design, y=mean)) + 
   labs(x = expression(paste(italic("d"))), 
        y = bquote(paste(italic(U[z](d)))), 
@@ -195,8 +203,8 @@ ggplot(data=df, aes(x=design, y=mean)) +
   geom_line() + theme(text=element_text(size=30))+
   geom_ribbon(aes(ymin=mean-sd, ymax=mean+sd), alpha = 0.2)
 dev.off()
-design[which.max(df$mean)] #0.4
-df$mean[which.max(df$mean)] #2.066
+design[which.max(df$mean)] #0.4 , for infected only 0.3
+df$mean[which.max(df$mean)] #2.066, for ut it is 1.427546
 design[which.min(df$sd)]
 df$sd[which.min(df$sd)]
 df$sd[which.max(df$sd)]
